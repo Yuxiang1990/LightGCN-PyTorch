@@ -366,7 +366,7 @@ class Loader(BasicDataset):
                 self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
                 self.Graph = self.Graph.coalesce().to(world.device)
                 print("don't split the matrix")
-        return self.Graph
+        return self.Graph, norm_adj
 
     def __build_test(self):
         """

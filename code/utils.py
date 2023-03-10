@@ -28,6 +28,8 @@ except:
     world.cprint("Cpp extension not loaded")
     sample_ext = False
 
+from time import time
+
 
 class BPRLoss:
     def __init__(self,
@@ -46,7 +48,6 @@ class BPRLoss:
         self.opt.zero_grad()
         loss.backward()
         self.opt.step()
-
         return loss.cpu().item()
 
 
@@ -110,6 +111,8 @@ def getFileName():
         file = f"mf-{world.dataset}-{world.config['latent_dim_rec']}.pth.tar"
     elif world.model_name == 'lgn':
         file = f"lgn-{world.dataset}-{world.config['lightGCN_n_layers']}-{world.config['latent_dim_rec']}.pth.tar"
+    else:
+        file = f"%s-{world.dataset}-{world.config['lightGCN_n_layers']}-{world.config['latent_dim_rec']}.pth.tar" % world.model_name
     return os.path.join(world.FILE_PATH,file)
 
 def minibatch(*tensors, **kwargs):

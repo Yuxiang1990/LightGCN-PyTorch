@@ -47,6 +47,7 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=N
                                                    posItems,
                                                    negItems,
                                                    batch_size=world.config['bpr_batch_size'])):
+        # print(batch_i, "forward...")
         cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
         aver_loss += cri
         if world.tensorboard:

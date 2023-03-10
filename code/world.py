@@ -15,8 +15,10 @@ import multiprocessing
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 args = parse_args()
-
-ROOT_PATH = "/Users/gus/Desktop/light-gcn"
+if os.path.exists("/mnt/lustre/yeyuxiang/projects"):
+    ROOT_PATH = "/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch"
+else:
+    ROOT_PATH = "/home/yuxiang/LightGCN-PyTorch"
 CODE_PATH = join(ROOT_PATH, 'code')
 DATA_PATH = join(ROOT_PATH, 'data')
 BOARD_PATH = join(CODE_PATH, 'runs')
@@ -31,7 +33,7 @@ if not os.path.exists(FILE_PATH):
 
 config = {}
 all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon-book']
-all_models  = ['mf', 'lgn']
+all_models  = ['mf', 'lgn', 'lgn_v1', 'lgn_v1_fast']
 # config['batch_size'] = 4096
 config['bpr_batch_size'] = args.bpr_batch
 config['latent_dim_rec'] = args.recdim
@@ -67,7 +69,7 @@ LOAD = args.load
 PATH = args.path
 topks = eval(args.topks)
 tensorboard = args.tensorboard
-comment = args.comment
+comment = "{}_{}".format(args.comment, args.model)
 # let pandas shut up
 from warnings import simplefilter
 simplefilter(action="ignore", category=FutureWarning)
