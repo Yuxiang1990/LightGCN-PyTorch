@@ -25,5 +25,6 @@ MODELS = {
     'mf': model.PureMF,
     'lgn': model.LightGCN,
     'lgn_v1': model_variant.LightGCN,  # add global GAT, cost ~30G gpu memory
-    'lgn_v1_fast': model_variant.LightGCN_fast
+    'lgn_v1_fast': model_variant.LightGCN_fast,
+    'lgn_mlp': model_variant.LightGCN_mlp
 }

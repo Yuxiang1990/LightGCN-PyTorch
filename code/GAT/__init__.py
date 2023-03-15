@@ -133,7 +133,7 @@ class SpGraphAttentionLayer(nn.Module):
         assert not torch.isnan(h_prime).any()
         # h_prime: N x out
 
-        h_prime = h_prime.div(e_rowsum)
+        h_prime = h_prime.div(e_rowsum + 1e-3)
         # h_prime: N x out
         assert not torch.isnan(h_prime).any()
 

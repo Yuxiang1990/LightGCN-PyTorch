@@ -177,6 +177,7 @@ class LightGCN_fast(LightGCN):
     def __init__(self, *arg, **kwargs):
         super(LightGCN_fast, self).__init__(*arg, **kwargs)
         self.GAT_layer = SpGraphAttentionLayer(self.config['latent_dim_rec'], self.config['latent_dim_rec'])
+        self.mlp = nn.Sequential(nn.ReLU(), nn.Linear(self.config['latent_dim_rec'], self.config['latent_dim_rec']))
 
     def computer(self, users=None, pos_items=None, neg_items=None):
         """
@@ -185,18 +186,6 @@ class LightGCN_fast(LightGCN):
         users_emb = self.embedding_user.weight
         items_emb = self.embedding_item.weight
         all_emb = torch.cat([users_emb, items_emb])
-        if users is not None:
-            indexes = torch.cat([users, pos_items + self.num_users])
-            cpu_indexes = indexes.cpu().numpy()
-            current_emb = all_emb[indexes]
-            norm_adj = self.norm_adj[cpu_indexes]
-            norm_adj = norm_adj[:, cpu_indexes]
-            subgraph = self._convert_sp_mat_to_sp_tensor(norm_adj).coalesce().cuda()
-            # subgraph = torch.index_select(self.Graph, 0, indexes)
-            # subgraph = torch.index_select(subgraph, 1, indexes)
-            all_emb[indexes] = self.GAT_layer(current_emb, subgraph)
-        else:
-            all_emb = self.GAT_layer(all_emb, self.Graph)
         embs = [all_emb]
         if self.config['dropout']:
             if self.training:
@@ -220,6 +209,24 @@ class LightGCN_fast(LightGCN):
         embs = torch.stack(embs, dim=1)
         # print(embs.size())
         light_out = torch.mean(embs, dim=1)
+
+        if users is not None:
+            # random_index = torch.randint(0, self.num_items + self.num_users, (2048, )).long().cuda()
+            # pos_indexes_i = torch.cat([users, pos_items + self.num_users, neg_items + self.num_users, random_index])
+            # pos_norm_adj = self.norm_adj[pos_indexes_i.cpu().numpy()]
+            # pos_norm_adj = pos_norm_adj[:, pos_indexes_i.cpu().numpy()]
+            # pos_norm_adj = self._convert_sp_mat_to_sp_tensor(pos_norm_adj).coalesce().cuda()
+            # all_emb[pos_indexes_i] = self.GAT_layer(all_emb[pos_indexes_i], pos_norm_adj)
+
+            items = torch.cat([users, pos_items + self.num_users, neg_items + self.num_users])
+            pos_norm_adj = self.norm_adj[items.cpu().numpy()]
+            pos_norm_adj = pos_norm_adj[self.num_users:]
+            pos_norm_adj = self._convert_sp_mat_to_sp_tensor(pos_norm_adj).coalesce().cuda()
+            light_out[items] = self.GAT_layer(light_out[items], pos_norm_adj)
+
+        else:
+            light_out = self.GAT_layer(light_out, self.Graph)
+
         users, items = torch.split(light_out, [self.num_users, self.num_items])
         return users, items
 
@@ -230,3 +237,41 @@ class LightGCN_fast(LightGCN):
         index = torch.stack([row, col])
         data = torch.FloatTensor(coo.data)
         return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
+
+
+class LightGCN_mlp(LightGCN):
+    def __init__(self, *arg, **kwargs):
+        super(LightGCN_mlp, self).__init__(*arg, **kwargs)
+        self.mlp = nn.Sequential(nn.ReLU(), nn.Linear(self.config['latent_dim_rec'], self.config['latent_dim_rec']))
+
+    def computer(self, users=None, pos_items=None, neg_items=None):
+        """
+        propagate methods for lightGCN
+        """
+        users_emb = self.embedding_user.weight
+        items_emb = self.embedding_item.weight
+        all_emb = torch.cat([users_emb, items_emb])
+        embs = [all_emb]
+        if self.config['dropout']:
+            if self.training:
+                print("droping")
+                g_droped = self.__dropout(self.keep_prob)
+            else:
+                g_droped = self.Graph
+        else:
+            g_droped = self.Graph
+
+        for layer in range(self.n_layers):
+            if self.A_split:
+                temp_emb = []
+                for f in range(len(g_droped)):
+                    temp_emb.append(torch.sparse.mm(g_droped[f], all_emb))
+                side_emb = torch.cat(temp_emb, dim=0)
+                all_emb = side_emb
+            else:
+                all_emb = torch.sparse.mm(g_droped, all_emb)  # (70000, 70000), (70000, 64)
+            embs.append(self.mlp(all_emb))
+        embs = torch.stack(embs, dim=1)
+        light_out = torch.mean(embs, dim=1)
+        users, items = torch.split(light_out, [self.num_users, self.num_items])
+        return users, items
