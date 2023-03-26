@@ -105,14 +105,17 @@ def Test(dataset, Recmodel, epoch, w=None, multicore=0):
             batch_users_gpu = batch_users_gpu.to(world.device)
 
             rating = Recmodel.getUsersRating(batch_users_gpu)
+            # print("getUsersRating ok ")
             #rating = rating.cpu()
             exclude_index = []
             exclude_items = []
             for range_i, items in enumerate(allPos):
                 exclude_index.extend([range_i] * len(items))
                 exclude_items.extend(items)
-            rating[exclude_index, exclude_items] = -(1<<10)
+            # print("getUsersRating ok 1")
+            rating[torch.tensor(exclude_index).long(), torch.tensor(exclude_items).long()] = -(1<<10)
             _, rating_K = torch.topk(rating, k=max_K)
+            # print("getUsersRating ok 2")
             rating = rating.cpu().numpy()
             # aucs = [ 
             #         utils.AUC(rating[i],
@@ -124,6 +127,8 @@ def Test(dataset, Recmodel, epoch, w=None, multicore=0):
             users_list.append(batch_users)
             rating_list.append(rating_K.cpu())
             groundTrue_list.append(groundTrue)
+
+        # print("getUsersRating ok 3")
         assert total_batch == len(users_list)
         X = zip(rating_list, groundTrue_list)
         if multicore == 1:

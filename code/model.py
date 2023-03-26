@@ -113,7 +113,11 @@ class LightGCN(BasicModel):
             self.embedding_item.weight.data.copy_(torch.from_numpy(self.config['item_emb']))
             print('use pretarined data')
         self.f = nn.Sigmoid()
-        self.Graph = self.dataset.getSparseGraph()
+        if self.config['svd_num'] > 0:
+            self.Graph = self.dataset.getSparseGraph_w_svd(salient_num=self.config['svd_num'])
+        else:
+            self.Graph = self.dataset.getSparseGraph()
+        print("self.Graph shape {}".format(self.Graph.shape))
         print(f"lgn is already to go(dropout:{self.config['dropout']})")
 
         # print("save_txt")

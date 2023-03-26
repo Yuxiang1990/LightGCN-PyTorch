@@ -187,6 +187,34 @@ class LightGCN_fast(LightGCN):
         items_emb = self.embedding_item.weight
         all_emb = torch.cat([users_emb, items_emb])
         embs = [all_emb]
+        if users is not None:
+            # random_index = torch.randint(0, self.num_items + self.num_users, (2048, )).long().cuda()
+            # pos_indexes_i = torch.cat([users, pos_items + self.num_users, neg_items + self.num_users, random_index])
+            # pos_norm_adj = self.norm_adj[pos_indexes_i.cpu().numpy()]
+            # pos_norm_adj = pos_norm_adj[:, pos_indexes_i.cpu().numpy()]
+            # pos_norm_adj = self._convert_sp_mat_to_sp_tensor(pos_norm_adj).coalesce().cuda()
+            # all_emb[pos_indexes_i] = self.GAT_layer(all_emb[pos_indexes_i], pos_norm_adj)
+
+            user_norm_adj = self.norm_adj[users.cpu().numpy()]
+            user_norm_adj = self._convert_sp_mat_to_sp_tensor(user_norm_adj).coalesce().cuda()
+            usr_embedding = self.GAT_layer(all_emb, user_norm_adj)
+
+            pos_norm_adj = self.norm_adj[(pos_items + self.num_users).cpu().numpy()]
+            pos_norm_adj = self._convert_sp_mat_to_sp_tensor(pos_norm_adj).coalesce().cuda()
+            pos_embedding = self.GAT_layer(all_emb, pos_norm_adj)
+
+            neg_norm_adj = self.norm_adj[(neg_items + self.num_users).cpu().numpy()]
+            neg_norm_adj = self._convert_sp_mat_to_sp_tensor(neg_norm_adj).coalesce().cuda()
+            neg_embedding = self.GAT_layer(all_emb, neg_norm_adj)
+
+            all_emb[users] = usr_embedding[users]
+            all_emb[(pos_items + self.num_users)] = pos_embedding[(pos_items + self.num_users)]
+            all_emb[(neg_items + self.num_users)] = neg_embedding[(neg_items + self.num_users)]
+
+
+        else:
+            all_emb = self.GAT_layer(all_emb, self.Graph)
+
         if self.config['dropout']:
             if self.training:
                 print("droping")
@@ -209,23 +237,6 @@ class LightGCN_fast(LightGCN):
         embs = torch.stack(embs, dim=1)
         # print(embs.size())
         light_out = torch.mean(embs, dim=1)
-
-        if users is not None:
-            # random_index = torch.randint(0, self.num_items + self.num_users, (2048, )).long().cuda()
-            # pos_indexes_i = torch.cat([users, pos_items + self.num_users, neg_items + self.num_users, random_index])
-            # pos_norm_adj = self.norm_adj[pos_indexes_i.cpu().numpy()]
-            # pos_norm_adj = pos_norm_adj[:, pos_indexes_i.cpu().numpy()]
-            # pos_norm_adj = self._convert_sp_mat_to_sp_tensor(pos_norm_adj).coalesce().cuda()
-            # all_emb[pos_indexes_i] = self.GAT_layer(all_emb[pos_indexes_i], pos_norm_adj)
-
-            items = torch.cat([users, pos_items + self.num_users, neg_items + self.num_users])
-            pos_norm_adj = self.norm_adj[items.cpu().numpy()]
-            pos_norm_adj = pos_norm_adj[self.num_users:]
-            pos_norm_adj = self._convert_sp_mat_to_sp_tensor(pos_norm_adj).coalesce().cuda()
-            light_out[items] = self.GAT_layer(light_out[items], pos_norm_adj)
-
-        else:
-            light_out = self.GAT_layer(light_out, self.Graph)
 
         users, items = torch.split(light_out, [self.num_users, self.num_items])
         return users, items

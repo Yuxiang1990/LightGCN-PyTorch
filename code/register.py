@@ -2,6 +2,7 @@ import world
 import dataloader
 import model
 import model_variant
+import model_svd
 import utils
 from pprint import pprint
 
@@ -26,5 +27,6 @@ MODELS = {
     'lgn': model.LightGCN,
     'lgn_v1': model_variant.LightGCN,  # add global GAT, cost ~30G gpu memory
     'lgn_v1_fast': model_variant.LightGCN_fast,
-    'lgn_mlp': model_variant.LightGCN_mlp
+    'lgn_mlp': model_variant.LightGCN_mlp,
+    'lgn_svd': model_svd.LightGCN_svd, #
 }

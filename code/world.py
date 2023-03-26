@@ -46,6 +46,8 @@ config['multicore'] = args.multicore
 config['lr'] = args.lr
 config['decay'] = args.decay
 config['pretrain'] = args.pretrain
+config['svd_num'] = args.svd_num
+
 config['A_split'] = False
 config['bigdata'] = False
 
@@ -58,8 +60,8 @@ dataset = args.dataset
 model_name = args.model
 if dataset not in all_dataset:
     raise NotImplementedError(f"Haven't supported {dataset} yet!, try {all_dataset}")
-if model_name not in all_models:
-    raise NotImplementedError(f"Haven't supported {model_name} yet!, try {all_models}")
+# if model_name not in all_models:
+#     raise NotImplementedError(f"Haven't supported {model_name} yet!, try {all_models}")
 
 
 

@@ -10,6 +10,8 @@ Every dataset's index has to start at 0
 import os
 from os.path import join
 import sys
+
+import scipy.sparse
 import torch
 import numpy as np
 import pandas as pd
@@ -62,6 +64,16 @@ class BasicDataset(Dataset):
         build a graph in torch.sparse.IntTensor.
         Details in NGCF's matrix form
         A = 
+            |I,   R|
+            |R^T, I|
+        """
+        raise NotImplementedError
+
+    def getSparseGraph_w_svd(self, *args, **kwargs):
+        """
+        build a graph in torch.sparse.IntTensor.
+        Details in NGCF's matrix form
+        A =
             |I,   R|
             |R^T, I|
         """
@@ -159,6 +171,38 @@ class LastFM(BasicDataset):
             self.Graph = torch.sparse.FloatTensor(index.t(), data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
             self.Graph = self.Graph.coalesce().to(world.device)
         return self.Graph
+
+    def getSparseGraph_w_svd(self, salient_num=None, ignore_th=0.01):
+        assert salient_num is not None
+        self.Graph = self.getSparseGraph()
+        U, value, V = torch.svd_lowrank(self.Graph.to_dense()[:self.n_users, self.n_users:], q=400, niter=30)
+        U = U.cpu().numpy()
+        V = V.cpu().numpy()
+        value = value.cpu().numpy()
+        d_value = np.diag(value)
+        d_value[salient_num:, salient_num:] = 0
+        uv = np.matmul(np.matmul(U, d_value), V.T)
+        uv[uv < ignore_th] = 0
+        Suv = scipy.sparse.csr_matrix(uv).tolil()
+
+        adj_mat = sp.dok_matrix((self.n_users + self.m_items, self.n_users + self.m_items), dtype=np.float32)
+        adj_mat = adj_mat.tolil()
+
+        adj_mat[:self.n_users, self.n_users:] = Suv
+        adj_mat[self.n_users:, :self.n_users] = Suv.T
+        adj_mat = adj_mat.todok().tocsr()
+
+        self.Graph = self._convert_sp_mat_to_sp_tensor(adj_mat)
+        self.Graph = self.Graph.coalesce().to(world.device)
+        return self.Graph
+
+    def _convert_sp_mat_to_sp_tensor(self, X):
+        coo = X.tocoo().astype(np.float32)
+        row = torch.Tensor(coo.row).long()
+        col = torch.Tensor(coo.col).long()
+        index = torch.stack([row, col])
+        data = torch.FloatTensor(coo.data)
+        return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
 
     def __build_test(self):
         """
@@ -258,7 +302,9 @@ class Loader(BasicDataset):
             for l in f.readlines():
                 if len(l) > 0:
                     l = l.strip('\n').split(' ')
-                    items = [int(i) for i in l[1:]]
+                    items = [int(i) for i in l[1:] if len(i)]
+                    if len(items) < 2:
+                        continue
                     uid = int(l[0])
                     testUniqueUsers.append(uid)
                     testUser.extend([uid] * len(items))
@@ -363,10 +409,51 @@ class Loader(BasicDataset):
                 self.Graph = self._split_A_hat(norm_adj)
                 print("done split matrix")
             else:
-                self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
-                self.Graph = self.Graph.coalesce().to(world.device)
-                print("don't split the matrix")
+                try:
+                    self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
+                    self.Graph = self.Graph.coalesce().to(world.device)
+                    print("don't split the matrix")
+                except:
+                    return None, norm_adj
         return self.Graph, norm_adj
+
+
+    def getSparseGraph_w_svd(self, salient_num=None, ignore_th=0.01):
+        assert salient_num is not None
+
+        self.Graph, norm_adj = self.getSparseGraph()
+        rate_matrix = norm_adj[:self.n_users, self.n_users:].todense()
+        self.rate_matrix = torch.from_numpy(rate_matrix).cuda()
+        U, value, V = torch.svd_lowrank(self.rate_matrix, q=400, niter=30)
+        U = U.cpu().numpy()
+        V = V.cpu().numpy()
+        value = value.cpu().numpy()
+        # if os.path.exists("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/svd/svd_gcn/datasets/gowalla/svd_value.npy"):
+        #     U = np.load("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/svd/svd_gcn/datasets/gowalla/svd_u.npy")
+        #     V = np.load("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/svd/svd_gcn/datasets/gowalla/svd_v.npy")
+        #     value = np.load("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/svd/svd_gcn/datasets/gowalla/svd_value.npy")
+        # else:
+        #     U = np.load("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/code/svd_u.npy")
+        #     V = np.load("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/code/svd_v.npy")
+        #     value = np.load("/mnt/lustre/yeyuxiang/projects/LightGCN-PyTorch/code/svd_value.npy")
+
+        d_value = np.diag(value)
+        d_value[salient_num:, salient_num:] = 0
+        uv = np.matmul(np.matmul(U, d_value), V.T)
+        uv[uv < ignore_th] = 0
+        Suv = scipy.sparse.csr_matrix(uv).tolil()
+
+        adj_mat = sp.dok_matrix((self.n_users + self.m_items, self.n_users + self.m_items), dtype=np.float32)
+        adj_mat = adj_mat.tolil()
+
+        adj_mat[:self.n_users, self.n_users:] = Suv
+        adj_mat[self.n_users:, :self.n_users] = Suv.T
+        adj_mat = adj_mat.todok().tocsr()
+
+        self.Graph = self._convert_sp_mat_to_sp_tensor(adj_mat)
+        self.Graph = self.Graph.coalesce().to(world.device)
+        return self.Graph
+
 
     def __build_test(self):
         """
@@ -405,3 +492,24 @@ class Loader(BasicDataset):
     #     for user in users:
     #         negItems.append(self.allNeg[user])
     #     return negItems
+
+
+if __name__ == '__main__':
+    U = np.load("/home/yuxiang/LightGCN-PyTorch/code/runs/svd_u.npy")
+    V = np.load("/home/yuxiang/LightGCN-PyTorch/code/runs/svd_v.npy")
+    value = np.load("/home/yuxiang/LightGCN-PyTorch/code/runs/svd_value.npy")
+    d_value = np.diag(value)
+    d_value[90:, 90:] = 0
+    uv = np.matmul(np.matmul(U, d_value), V.T)
+    uv[uv < 0.01] = 0
+    Suv = scipy.sparse.csr_matrix(uv).tolil()
+    n_users = 29858
+    m_items = 40981
+    adj_mat = sp.dok_matrix((n_users + m_items, n_users + m_items), dtype=np.float32)
+    adj_mat = adj_mat.tolil()
+
+    adj_mat[:n_users, n_users:] = Suv
+    adj_mat[n_users:, :n_users] = Suv.T
+    adj_mat = adj_mat.todok().tocsr()
+
+    sp.save_npz("/home/yuxiang/LightGCN-PyTorch/code/runs/s_pre_adj_mat.npz", adj_mat)
