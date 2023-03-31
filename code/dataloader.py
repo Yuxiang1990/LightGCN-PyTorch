@@ -175,7 +175,7 @@ class LastFM(BasicDataset):
     def getSparseGraph_w_svd(self, salient_num=None, ignore_th=0.01):
         assert salient_num is not None
         self.Graph = self.getSparseGraph()
-        U, value, V = torch.svd_lowrank(self.Graph.to_dense()[:self.n_users, self.n_users:], q=400, niter=30)
+        U, value, V = torch.svd_lowrank(self.Graph.to_dense()[:self.n_users, self.n_users:], q=800, niter=30)
         U = U.cpu().numpy()
         V = V.cpu().numpy()
         value = value.cpu().numpy()
